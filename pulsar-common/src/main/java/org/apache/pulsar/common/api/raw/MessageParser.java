@@ -64,8 +64,13 @@ public class MessageParser {
      */
     public static void parseMessage(TopicName topicName, long ledgerId, long entryId, ByteBuf headersAndPayload,
             MessageProcessor processor, int maxMessageSize) throws IOException {
-        ByteBuf payload = headersAndPayload;
+        parseMessage(topicName, ledgerId, entryId, headersAndPayload, processor, new NoopMessageDecryptor(), maxMessageSize);
+    }
+
+    public static void parseMessage(TopicName topicName, long ledgerId, long entryId, ByteBuf headersAndPayload,
+        MessageProcessor processor, MessageDecryptor messageDecryptor, int maxMessageSize) throws IOException {
         ByteBuf uncompressedPayload = null;
+        ByteBuf decryptedPayload;
         ReferenceCountedMessageMetadata refCntMsgMetadata = null;
 
         try {
@@ -78,7 +83,7 @@ public class MessageParser {
             MessageMetadata msgMetadata = refCntMsgMetadata.getMetadata();
 
             try {
-                Commands.parseMessageMetadata(payload, msgMetadata);
+                Commands.parseMessageMetadata(headersAndPayload, msgMetadata);
             } catch (Throwable t) {
                 log.warn("[{}] Failed to deserialize metadata for message {}:{} - Ignoring",
                     topicName, ledgerId, entryId);
@@ -90,12 +95,14 @@ public class MessageParser {
                 return;
             }
 
-            if (msgMetadata.getEncryptionKeysCount() > 0) {
-                throw new IOException("Cannot parse encrypted message " + msgMetadata + " on topic " + topicName);
+            try{
+                decryptedPayload = decryptPayloadIfNeeded(topicName, msgMetadata, headersAndPayload, messageDecryptor);
+            } catch (MessageDecryptException e) {
+                throw new IOException("Cannot parse encrypted message " + msgMetadata + " on topic " + topicName + ", " + e.getMessage());
             }
 
-            uncompressedPayload = uncompressPayloadIfNeeded(topicName, msgMetadata, headersAndPayload, ledgerId,
-                    entryId, maxMessageSize);
+            uncompressedPayload = uncompressPayloadIfNeeded(topicName, msgMetadata, decryptedPayload, ledgerId,
+                entryId, maxMessageSize);
 
             if (uncompressedPayload == null) {
                 // Message was discarded on decompression error
@@ -133,6 +140,17 @@ public class MessageParser {
         }
 
         return true;
+    }
+
+    public static ByteBuf decryptPayloadIfNeeded(TopicName topic, MessageMetadata msgMetadata,
+        ByteBuf payload, MessageDecryptor messageDecryptor)
+        throws MessageDecryptException {
+        // payload is encrypted, decrypt it using provided message decryptor
+        if(msgMetadata.getEncryptionKeysCount() > 0) {
+            return messageDecryptor.decrypt(topic.toString(), msgMetadata, payload);
+        }
+        // payload is not encrypted, no need to decrypt
+        return payload;
     }
 
     public static ByteBuf uncompressPayloadIfNeeded(TopicName topic, MessageMetadata msgMetadata,

@@ -53,6 +53,7 @@ public class PulsarConnectorFactory implements ConnectorFactory {
         if (log.isDebugEnabled()) {
             log.debug("Creating Pulsar connector with configs: %s", config);
         }
+        log.debug("Creating Pulsar connector with configs: %s", config);
         try {
             // A plugin is not required to use Guice; it is just very convenient
             Bootstrap app = new Bootstrap(

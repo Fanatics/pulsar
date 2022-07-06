@@ -86,6 +86,9 @@ public class PulsarConnectorConfig implements AutoCloseable {
     // --- Nar extraction
     private String narExtractionDirectory = NarClassLoader.DEFAULT_NAR_EXTRACTION_DIR;
 
+    // --- payload decryption
+    private String payloadDecryptorClassName;
+
     @NotNull
     public String getBrokerServiceUrl() {
         if (StringUtils.isEmpty(webServiceUrl)){
@@ -460,6 +463,17 @@ public class PulsarConnectorConfig implements AutoCloseable {
         offloadPolicies.setOffloadersDirectory(getOffloadersDirectory());
         return offloadPolicies;
     }
+
+    public String getPayloadDecryptorPlugin() {
+        return "com.fanatics.pulsar.presto.decrypt.plugin.DecryptPlugin";
+       // return this.payloadDecryptorClassName;
+    }
+
+//    @Config("pulsar.payload-decrypt-plugin")
+//    public PulsarConnectorConfig setPayloadDecryptorClassName(String payloadDecryptorClassName) throws IOException {
+//        this.payloadDecryptorClassName = payloadDecryptorClassName;
+//        return this;
+//    }
 
     @Override
     public void close() throws Exception {
