@@ -464,16 +464,15 @@ public class PulsarConnectorConfig implements AutoCloseable {
         return offloadPolicies;
     }
 
-    public String getPayloadDecryptorPlugin() {
-        return "com.fanatics.pulsar.presto.decrypt.plugin.DecryptPlugin";
-       // return this.payloadDecryptorClassName;
+    public String getPayloadDecryptPlugin() {
+        return this.payloadDecryptorClassName;
     }
 
-//    @Config("pulsar.payload-decrypt-plugin")
-//    public PulsarConnectorConfig setPayloadDecryptorClassName(String payloadDecryptorClassName) throws IOException {
-//        this.payloadDecryptorClassName = payloadDecryptorClassName;
-//        return this;
-//    }
+    @Config("pulsar.payload-decrypt-plugin")
+    public PulsarConnectorConfig setPayloadDecryptPlugin(String payloadDecryptorClassName) throws IOException {
+        this.payloadDecryptorClassName = payloadDecryptorClassName;
+        return this;
+    }
 
     @Override
     public void close() throws Exception {

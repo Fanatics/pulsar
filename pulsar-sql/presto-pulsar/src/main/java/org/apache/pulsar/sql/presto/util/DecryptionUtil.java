@@ -25,13 +25,10 @@ import org.apache.pulsar.common.api.raw.MessageDecryptor;
 import org.apache.pulsar.common.api.raw.NoopMessageDecryptor;
 
 public class DecryptionUtil {
-  public static MessageDecryptor getMessageDecryptor(String decryptorPluginClassName) throws PulsarClientException {
+  public static MessageDecryptor getMessageDecryptor(String decryptPluginClassName) throws PulsarClientException {
     try {
-      if(StringUtils.isNotBlank(decryptorPluginClassName)) {
-        System.out.println("USING CLASS LOADER [DecryptionUtil]: " + DecryptionUtil.class + ", "+ DecryptionUtil.class.getClassLoader());
-        System.out.println("USING CLASS LOADER [MessageDecryptor]: " + MessageDecryptor.class + ", "+ MessageDecryptor.class.getClassLoader());
-
-        Class<?> decryptClass = DecryptionUtil.class.getClassLoader().loadClass(decryptorPluginClassName);
+      if(StringUtils.isNotBlank(decryptPluginClassName)) {
+        Class<?> decryptClass = DecryptionUtil.class.getClassLoader().loadClass(decryptPluginClassName);
         return (MessageDecryptor) decryptClass.getDeclaredConstructor().newInstance();
       } else {
         return new NoopMessageDecryptor();

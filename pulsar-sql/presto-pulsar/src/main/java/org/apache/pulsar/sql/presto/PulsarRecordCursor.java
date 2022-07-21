@@ -201,10 +201,9 @@ public class PulsarRecordCursor implements RecordCursor {
         }
 
         try {
-            System.out.println("CLASSLOADER for PulsarRecordCursor : " + getClass().getClassLoader());
-            this.messageDecryptor = DecryptionUtil.getMessageDecryptor(pulsarConnectorConfig.getPayloadDecryptorPlugin());
+            this.messageDecryptor = DecryptionUtil.getMessageDecryptor(pulsarConnectorConfig.getPayloadDecryptPlugin());
         } catch (PulsarClientException e) {
-            log.error(e, "Failed to initialize initialize message decryptor");
+            log.error(e, "Failed to initialize message decryptor");
             throw new RuntimeException(e);
         }
 
