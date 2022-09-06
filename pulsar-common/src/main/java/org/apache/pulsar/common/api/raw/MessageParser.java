@@ -56,12 +56,39 @@ public class MessageParser {
     }
 
     /**
+     * Definition of an interface to process an encrypted payload.
+     */
+    public interface MessageDecryptor {
+        ByteBuf decrypt(ByteBuf headersAndPayload, MessageMetadata messageMetadata) throws Exception;
+    }
+
+    /**
      * Parse a raw Pulsar entry payload and extract all the individual message that may be included in the batch. The
      * provided {@link MessageProcessor} will be invoked for each individual message.
      */
     public static void parseMessage(TopicName topicName, long ledgerId, long entryId, ByteBuf headersAndPayload,
             MessageProcessor processor, int maxMessageSize) throws IOException {
+        parseMessage(topicName, ledgerId, entryId, headersAndPayload, processor, maxMessageSize,
+            // default message decryptor i.e do nothing but throw exception if payload is encrypted
+            ((headersAndPayload1, messageMetadata) -> {
+                if (messageMetadata.getEncryptionKeysCount() > 0) {
+                    throw new Exception("Can not decrypt encrypted message");
+                }
+                return headersAndPayload1;
+            })
+        );
+    }
+
+    /**
+     * Parse a raw Pulsar entry payload and extract all the individual message that may be included in the batch. The
+     * provided {@link MessageProcessor} will be invoked for each individual message.
+     * It will try to decrypt the message payload if the message is encrypted
+     */
+    public static void parseMessage(TopicName topicName, long ledgerId, long entryId, ByteBuf headersAndPayload,
+        MessageProcessor processor, int maxMessageSize, MessageDecryptor messageDecryptor)
+        throws IOException {
         ByteBuf payload = headersAndPayload;
+        ByteBuf decryptedPayload;
         ByteBuf uncompressedPayload = null;
         ReferenceCountedMessageMetadata refCntMsgMetadata = null;
 
@@ -87,12 +114,16 @@ public class MessageParser {
                 return;
             }
 
-            if (msgMetadata.getEncryptionKeysCount() > 0) {
-                throw new IOException("Cannot parse encrypted message " + msgMetadata + " on topic " + topicName);
+            try {
+                decryptedPayload = messageDecryptor.decrypt(headersAndPayload, msgMetadata);
+            } catch (Exception e) {
+                throw new IOException("Cannot parse encrypted message "
+                    +
+                    msgMetadata + " on topic " + topicName + ", " + e.getMessage());
             }
 
-            uncompressedPayload = uncompressPayloadIfNeeded(topicName, msgMetadata, headersAndPayload, ledgerId,
-                    entryId, maxMessageSize);
+            uncompressedPayload = uncompressPayloadIfNeeded(topicName, msgMetadata, decryptedPayload, ledgerId,
+                entryId, maxMessageSize);
 
             if (uncompressedPayload == null) {
                 // Message was discarded on decompression error

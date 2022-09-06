@@ -36,6 +36,7 @@ import io.trino.decoder.FieldValueProvider;
 import io.trino.spi.block.Block;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.RecordCursor;
+import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.Type;
 import java.io.IOException;
 import java.util.HashMap;
@@ -60,6 +61,7 @@ import org.apache.bookkeeper.mledger.impl.ReadOnlyCursorImpl;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.schema.KeyValueSchemaInfo;
+import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.api.raw.MessageParser;
 import org.apache.pulsar.common.api.raw.RawMessage;
 import org.apache.pulsar.common.api.raw.RawMessageIdImpl;
@@ -73,6 +75,9 @@ import org.apache.pulsar.common.schema.KeyValueEncodingType;
 import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.schema.SchemaType;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
+import org.apache.pulsar.sql.presto.decryptor.DecryptionPluginUtil;
+import org.apache.pulsar.sql.presto.decryptor.MessageDecryptException;
+import org.apache.pulsar.sql.presto.decryptor.MessageDecryptor;
 import org.apache.pulsar.sql.presto.util.CacheSizeAllocator;
 import org.apache.pulsar.sql.presto.util.NoStrictCacheSizeAllocator;
 import org.apache.pulsar.sql.presto.util.NullCacheSizeAllocator;
@@ -125,9 +130,12 @@ public class PulsarRecordCursor implements RecordCursor {
 
     private static final Logger log = Logger.get(PulsarRecordCursor.class);
 
+    private ConnectorIdentity connectorIdentity;
+    private MessageDecryptor messageDecryptor;
+
     public PulsarRecordCursor(List<PulsarColumnHandle> columnHandles, PulsarSplit pulsarSplit,
                               PulsarConnectorConfig pulsarConnectorConfig,
-                              PulsarDispatchingRowDecoderFactory decoderFactory) {
+                              PulsarDispatchingRowDecoderFactory decoderFactory, ConnectorIdentity connectorIdentity) {
         this.splitSize = pulsarSplit.getSplitSize();
         // Set start time for split
         this.startTime = System.nanoTime();
@@ -146,6 +154,9 @@ public class PulsarRecordCursor implements RecordCursor {
             offloadPolicies.setManagedLedgerOffloadMaxThreads(
                     pulsarConnectorConfig.getManagedLedgerOffloadMaxThreads());
         }
+
+        this.connectorIdentity = connectorIdentity;
+
         initialize(columnHandles, pulsarSplit, pulsarConnectorConfig,
                 pulsarConnectorCache.getManagedLedgerFactory(),
                 pulsarConnectorCache.getManagedLedgerConfig(
@@ -195,6 +206,16 @@ public class PulsarRecordCursor implements RecordCursor {
             throw new RuntimeException(e);
 
         }
+
+        log.info("Initializing message decryptor");
+        try {
+            this.messageDecryptor = DecryptionPluginUtil.getMessageDecryptor(
+                this.pulsarConnectorConfig.getPayloadDecryptPlugin(),
+                this.connectorIdentity);
+        } catch (MessageDecryptException ex) {
+            log.error(ex, "Failed to initialize message decryptor plugin");
+        }
+
         log.info("Initializing split with parameters: %s", pulsarSplit);
 
         try {
@@ -327,7 +348,11 @@ public class PulsarRecordCursor implements RecordCursor {
                                                 } catch (InterruptedException e) {
                                                     //no-op
                                                 }
-                                            }, pulsarConnectorConfig.getMaxMessageSize());
+                                            },
+                                        pulsarConnectorConfig.getMaxMessageSize(),
+                                        ((headersAndPayload, messageMetadata) -> decryptPayLoadIfNeeded(
+                                            topicName, messageMetadata, headersAndPayload, messageDecryptor))
+                                        );
                                 } catch (IOException e) {
                                     log.error(e, "Failed to parse message from pulsar topic %s", topicName.toString());
                                     throw new RuntimeException(e);
@@ -360,6 +385,20 @@ public class PulsarRecordCursor implements RecordCursor {
                 throw ex;
             }
         }
+    }
+
+    private ByteBuf decryptPayLoadIfNeeded(TopicName topicName,
+        MessageMetadata messageMetadata,
+        ByteBuf headersAndPayload, MessageDecryptor messageDecryptor) throws MessageDecryptException {
+        // payload is encrypted, decrypt it using provided message decrypt plugin
+        if (messageMetadata.getEncryptionKeysCount() > 0) {
+            return messageDecryptor.decrypt(topicName.toString(),
+                messageMetadata,
+                headersAndPayload);
+        }
+
+        // payload is not encrypted, return payload as it is
+        return headersAndPayload;
     }
 
     private boolean entryExceedSplitEndPosition(Entry entry) {
