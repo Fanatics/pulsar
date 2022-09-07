@@ -18,13 +18,11 @@
  */
 package org.apache.pulsar.sql.presto.decryptor;
 
-import io.airlift.log.Logger;
 import io.trino.spi.security.ConnectorIdentity;
 import java.lang.reflect.Constructor;
 import org.apache.commons.lang3.StringUtils;
 
 public class DecryptionPluginUtil {
-  private static final Logger log = Logger.get(DecryptionPluginUtil.class);
   public static MessageDecryptor getMessageDecryptor(String decryptPluginClassName,
       ConnectorIdentity connectorIdentity) throws MessageDecryptException {
     try {
@@ -36,7 +34,6 @@ public class DecryptionPluginUtil {
         return new NoopMessageDecryptor(connectorIdentity);
       }
     } catch (Throwable t) {
-      t.printStackTrace();
       throw new MessageDecryptException(t.getMessage());
     }
   }
