@@ -61,7 +61,6 @@ import org.apache.bookkeeper.mledger.impl.ReadOnlyCursorImpl;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.schema.KeyValueSchemaInfo;
-import org.apache.pulsar.common.api.raw.MessageDecryptor;
 import org.apache.pulsar.common.api.raw.MessageParser;
 import org.apache.pulsar.common.api.raw.RawMessage;
 import org.apache.pulsar.common.api.raw.RawMessageIdImpl;
@@ -76,7 +75,6 @@ import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.schema.SchemaType;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.sql.presto.util.CacheSizeAllocator;
-import org.apache.pulsar.sql.presto.util.DecryptionUtil;
 import org.apache.pulsar.sql.presto.util.NoStrictCacheSizeAllocator;
 import org.apache.pulsar.sql.presto.util.NullCacheSizeAllocator;
 import org.jctools.queues.MessagePassingQueue;
@@ -127,8 +125,6 @@ public class PulsarRecordCursor implements RecordCursor {
             ConcurrentOpenHashMap.<String, ChunkedMessageCtx>newBuilder().build();
 
     private static final Logger log = Logger.get(PulsarRecordCursor.class);
-
-    private MessageDecryptor messageDecryptor;
 
     public PulsarRecordCursor(List<PulsarColumnHandle> columnHandles, PulsarSplit pulsarSplit,
                               PulsarConnectorConfig pulsarConnectorConfig,
@@ -198,16 +194,10 @@ public class PulsarRecordCursor implements RecordCursor {
         } catch (PulsarClientException e) {
             log.error(e, "Failed to init  Pulsar SchemaInfo Provider");
             throw new RuntimeException(e);
-        }
 
-        try {
-            this.messageDecryptor = DecryptionUtil.getMessageDecryptor(pulsarConnectorConfig.getPayloadDecryptPlugin());
-        } catch (PulsarClientException e) {
-            log.error(e, "Failed to initialize message decryptor");
-            throw new RuntimeException(e);
         }
-
         log.info("Initializing split with parameters: %s", pulsarSplit);
+
         try {
             this.cursor = getCursor(TopicName.get("persistent", NamespaceName.get(pulsarSplit.getSchemaName()),
                 pulsarSplit.getTableName()), pulsarSplit.getStartPosition(), managedLedgerFactory, managedLedgerConfig);
@@ -338,7 +328,7 @@ public class PulsarRecordCursor implements RecordCursor {
                                                 } catch (InterruptedException e) {
                                                     //no-op
                                                 }
-                                            }, messageDecryptor,  pulsarConnectorConfig.getMaxMessageSize());
+                                            }, pulsarConnectorConfig.getMaxMessageSize());
                                 } catch (IOException e) {
                                     log.error(e, "Failed to parse message from pulsar topic %s", topicName.toString());
                                     throw new RuntimeException(e);
